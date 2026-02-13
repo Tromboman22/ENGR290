@@ -39,7 +39,7 @@ void uart_init() {
     UCSR0B = (1 << TXEN0);  
 
     // Set frame format: 8 data bits (Z02, Z01, Z00 are 011 for 8 bits data)
-    UCSR0C = (0 << USCZ02) | (1 << UCSZ01) | (1 << UCSZ00); //format is called 8N1
+    UCSR0C = (0 << UCSZ02) | (1 << UCSZ01) | (1 << UCSZ00); //format is called 8N1
 
     // set the pins using the atmel layout
     DDRB |= (1 << mainLED);  // D11 output (PWM LED)
@@ -99,9 +99,9 @@ int main(void) {
   PWM_init();
 
   while(1){
-    reading = 0; // *** check later ***
+    reading = 0; 
     // get multiple data points since the sensor is suceptible to noise
-    for(int i = 0; i < ADC_sample_max; ++i){
+    for(int i = 0; i < ADC_sample_max; i++){
       reading += ADC_read();
     }
     reading = reading/ADC_sample_max;
@@ -110,28 +110,22 @@ int main(void) {
     // account for false readings below 20, this uses the logic from SharpIR.cpp in the SharpIR ghithub library at https://github.com/qub1750ul/Arduino_SharpIR/blob/master/src/SharpIR.cpp
     // Sensor is GP2Y0A21YK0F, added a layer of protection in case of a very low reading bug
     if (reading > 20) {
-      distance = 4800.0 / (reading - 20); //*** need f for float?? ***
+      distance = 4800.0 / (reading - 20); 
     } else {
-      distance = d2 + 1;   // force out-of-bounds high, low reading means farther away as per the data sheet
+      distance = d2;   // force out-of-bounds high, low reading means farther away as per the data sheet
     }
 
 
     // account for the edge cases, keeping sensor 10cm from front of vehicle might prove useful...
     if(distance >= d2){
-      distance = d2 + 1;
+      distance = d2;
       edges_indicator = true; // flash yellow led
     }
     else if(distance <= d1){
-      distance = d1 - 1;
+      distance = d1;
       edges_indicator = true; // flash yellow led
     } 
 
-    // brightness 
-    if(distance <= d1) {    // account for overflow
-      distance = d1;
-    }else if(distance >= d2){ 
-      distance = d2;
-    }
     // scale the brightness linearly from 14cm to 42cm
     brightness = 255 * (1 - (distance - d1)/(d2-d1)); 
     // if the brightness ever inverts for some reason, add failsafe to make sure brightness never goes past edges, as brightness is uint8_t
