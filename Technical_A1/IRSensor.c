@@ -32,8 +32,8 @@ void init() {
     // set baud rate to same as Serial(9600)
     UBRR0H = 0;  
     UBRR0L = (16000000 / (16 * 9600)) - 1;    // ubrr is a 16-bit register, baud_val is near 104 so ubbr high is 0
-    // Enable receiver and transmitter through register B
-    UCSR0B = (1 << RXEN0) | (1 << TXEN0);  
+    // Enable uart communication through register B
+    UCSR0B = (1 << TXEN0);  
 
     // Set frame format: 8 data bits, 1 stop bit (parity is disabled by default)
     UCSR0C = (1 << UCSZ01) | (1 << UCSZ00);
@@ -71,7 +71,30 @@ uint16_t ADC_read(void)
 }
 
 
-// Printing
+// Printing with uart (no printf)
+void putchar(char c)
+{
+    while (!(UCSR0A & (1 << UDRE0))); // Wait until buffer empty
+    UDR0 = c;
+}
+
+void print_string(const char *str)
+{
+    while (*str)
+    {
+        putchar(*str);
+        str++;  // cycke through the string
+    }
+}
+
+void print_int(int value)
+{
+    char buffer[10];
+    itoa(value, buffer, 10);  // convert int to string (base 10)
+    print_string(buffer);
+}
+
+
 
 
 
@@ -82,6 +105,7 @@ int main(void) {
   init();
   ADC_init();
   PWM_init();
+  stdout = &uart_output;
 
 
   while(1){
@@ -125,10 +149,13 @@ int main(void) {
     OCR2A = brightness;
 
     // show data
-    printf("Analog reading: %i", reading);
-    printf(" | Distance: %d", distance);
-    printf(" cm | Brightness: %d", brightness);
-    printf(" /255");
+    print_string("ADC reading: ");
+    print_int(reading);
+    print_string(" | Distance: ");
+    print_int(distance);
+    print_string(" cm | Brightness: ")
+    print_int(brightness);
+    print_string(" /255");
 
 
     // control blinker
