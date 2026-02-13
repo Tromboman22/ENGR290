@@ -3,6 +3,10 @@
 #include <avr/interrupt.h>
 #include <stdlib.h>
 #include <string.h>
+
+#define F_CPU 16000000UL  // UL is unsigned, 16Mhz is arduino nano clock rate
+#define baud_val 9600UL
+// define clock freq for delay function
 #include <util/delay.h>
 
 // define pins and limits
@@ -23,19 +27,17 @@ uint8_t brightness;  // 8 bits unisgned
 // If you use an IR sensor, you can set it to a reasonable value, something between 4 and 10 should work well.
 #define ADC_sample_max 4
 
-volatile uint8_t RX_buff, ADC_sample;
-volatile uint16_t time, delay_ms, ADC_acc; 
 
 // cpu freq is 16Mhz, desired baud rate is 9600, 
 // uart baud register rate (ubrr) is 16Mhz(16bits * 9600) - 1 = 103 
 void init() {
     // set baud rate to same as Serial(9600)
     UBRR0H = 0;  
-    UBRR0L = (16000000 / (16 * 9600)) - 1;    // ubrr is a 16-bit register, baud_val is near 104 so ubbr high is 0
+    UBRR0L = (F_CPU / (16 * baud_val)) - 1;    // ubrr is a 16-bit register, val instde is near 104 (0x0068) so ubbr high is 0
     // Enable uart communication through register B
     UCSR0B = (1 << TXEN0);  
 
-    // Set frame format: 8 data bits, 1 stop bit (parity is disabled by default)
+    // Set frame format: 8 data bits, 1 stop bit (parity is disabled by default) for data packets
     UCSR0C = (1 << UCSZ01) | (1 << UCSZ00);
 
     // set the pins using the atmel layout
@@ -72,7 +74,7 @@ uint16_t ADC_read(void)
 
 
 // Printing with uart (no printf)
-void putchar(char c)
+void uart_putchar(char c)
 {
     while (!(UCSR0A & (1 << UDRE0))); // Wait until buffer empty
     UDR0 = c;
@@ -82,7 +84,7 @@ void print_string(const char *str)
 {
     while (*str)
     {
-        putchar(*str);
+        uart_putchar(*str);
         str++;  // cycke through the string
     }
 }
@@ -95,26 +97,19 @@ void print_int(int value)
 }
 
 
-
-
-
-// no arduino libs
-
 int main(void) {
   // setup all in this func
   init();
   ADC_init();
   PWM_init();
-  stdout = &uart_output;
-
 
   while(1){
     reading = 0;
     // get multiple data points since the sensor is suceptible to noise
-    for(int i = 0; i < 4; ++i){
+    for(int i = 0; i < ADC_sample_max; ++i){
       reading += ADC_read();
     }
-    reading = reading/4;
+    reading = reading/ADC_sample_max;
     
 
     // account for false readings below 20, this uses the logic from SharpIR.cpp in the SharpIR ghithub library at https://github.com/qub1750ul/Arduino_SharpIR/blob/master/src/SharpIR.cpp
@@ -137,8 +132,8 @@ int main(void) {
     } 
 
     // brightness 
-    if(distance < d1) brightness = 0;   // edge cases
-    else if(distance > d2) brightness = 255;
+    if(distance < d1) brightness = 255;   // edge cases, LED is brightest at brightness = 0
+    else if(distance > d2) brightness = 0;
     else{     // scale the brightness linearly from 14cm to 42cm
       brightness = 255 * (1 - (distance - d1)/(d2-d1)); 
       // if the brightness ever inverts for some reason, add failsafe to make sure brightness never goes past edges, as brightness is uint8_t
@@ -152,10 +147,10 @@ int main(void) {
     print_string("ADC reading: ");
     print_int(reading);
     print_string(" | Distance: ");
-    print_int(distance);
-    print_string(" cm | Brightness: ")
-    print_int(brightness);
-    print_string(" /255");
+    print_int((int)distance);
+    print_string(" cm | Brightness: ");
+    print_int((int)brightness);
+    uart_putchar('\n');
 
 
     // control blinker
