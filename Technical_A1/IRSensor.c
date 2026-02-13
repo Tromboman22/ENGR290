@@ -1,75 +1,19 @@
-#include <stdio.h>
-#include <math.h>  // for math operations used for distance
-
-#define F_CPU 16000000UL  // UL is unsigned long, 16k is Arduino Nano cpu frequency
-#define BAUD 9600         // Desired Baud rate
-uint16_t baud_val = UART_BAUD_SELECT(BAUD, F_CPU);  // baud select macro from avr-uart library
-
-
-#include <avr/io.h>
-#include <avr/interrupt.h>
-#include <stdlib.h>
-#include <string.h>
-#include <util/delay.h>
-
 // define pins and limits
-
 //Pins
 #define IRPin A0
 #define mainLED 11  // pwm led pin
 #define yloLED 13     // yellow led
 
 //limits and variables
+const int max_dist = 80;
+const int min_dist = 10;
 const float d2 = 42;
 const float d1 = 14;
 int reading;
 float distance;
 bool edges_indicator = false;
-uint8_t brightness, ADC0;  // 8 bits unisgned
+uint8_t brightness;  // 8 bits unisgned
 
-// If you use an IR sensor, you can set it to a reasonable value, something between 4 and 10 should work well.
-#define ADC_sample_max 4
-
-volatile uint8_t RX_buff, ADC_sample;
-volatile uint16_t time, delay_ms, ADC_acc; 
-
-void init() {
-    // set baud rate to same as Serial(9600)
-    UBRR0 = baud_val;  // uart baud rate registers getting their baud rate set
-                       // ubrr is a 16-bit register, tbut baud_val is near 103 so we dont need to bit shift anything
-
-    // Enable receiver and transmitter through register B
-    UCSR0B = (1 << RXEN0) | (1 << TXEN0);  
-
-    // Set frame format: 8 data bits, 1 stop bit (parity is disabled by default)
-    UCSR0C = (1 << UCSZ01) | (1 << UCSZ00);
-}
-
-// no arduino libs
-
-int main(void) {
-  // setup
-  init();
-
-
-  while(TRUE){
-    // loop
-    
-    }
-}
-
-
-
-
-
-
-
-
-
-
-
-
-// using arduino libraries:
 
 void setup() {
   Serial.begin(9600);
