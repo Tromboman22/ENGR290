@@ -31,8 +31,8 @@ volatile uint32_t pulse_width = 0;
 const float min_distance = 14.0;
 const float max_distance = 42.0;
 
-const uint32_t min_pulse = 812;     // Closest object 14 * 58 cm
-const uint32_t max_pulse = 2436;    // Furthest object 42 * 58 cm
+const uint32_t min_pulse = 411;     // Closest object 14 * 58 cm (distance * 58) time of flight sound (411)
+const uint32_t max_pulse = 1233;    // Furthest object 42 * 58 cm (1233)
 
 //LED brightness range (8bit PWM)
 const int min_brightness = 0;   // approx 0%
