@@ -1,0 +1,589 @@
+#define F_CPU 16000000UL
+#include <avr/io.h>
+#include <avr/interrupt.h>
+#include <util/delay.h>
+#include <util/twi.h>
+#include <math.h>
+#include <stdlib.h>
+#include <stdio.h>
+
+// where everything is connected, double check these if stuff dont work
+#define SERVO_PIN           PB1     // Arduino pin 9 - the servo signal wire
+#define LED_L_PIN           PB5     // Arduino pin 13 - that built in LED "L"
+#define LED_D3_PIN          PD3     // Arduino pin 3 - the PWM pin for D3 brightness
+
+// the IMU's i2c address and register addresses, hope i got these right
+#define MPU6050_ADDR        0x68    // typical MPU6050 address (when AD0 is low)
+#define MPU6050_PWR_MGMT_1  0x6B    // power management register
+#define MPU6050_ACCEL_XOUT_H 0x3B   // first accel register (high byte)
+
+#define ACCEL_SCALE         16384.0f  // for converting raw to g's at +/-2g 
+#define GYRO_SCALE          131.0f    // for converting raw to deg/sec at +/-250 range  
+#define GRAVITY             9.81f     // m/s^2, close enough
+#define PI                  3.14159265359f  // need this for trig stuff
+
+#define CALIBRATION_SAMPLES 1000     // how many samples to take during calibration
+
+// these flags keep track of whats happening with I2C communication
+volatile struct {
+    uint8_t TX_new_data:1;      // got new data to send
+    uint8_t TX_finished:1;      // done sending
+    uint8_t TX_buffer1_empty:1; // first buffer is empty
+    uint8_t TX_buffer2_empty:1; // second buffer is empty
+    uint8_t RX_flag:3;           // receiving status
+    uint8_t TWI_ACK:1;          // did we get an acknowledge?
+} flags;
+
+volatile uint8_t TWI_status, TWI_byte;  // status codes and data byte
+
+// starts I2C communication with a device at specified address
+uint8_t TWI_start(uint8_t twi_addr, uint8_t read_write) {
+    TWCR = ((1<<TWINT)|(1<<TWSTA)|(1<<TWEN)); // send START condition
+    while(!(TWCR&(1<<TWINT))); // wait until transmission completed
+    if (((TWSR&0xF8)!=TW_START)&&((TWSR&0xF8)!=TW_REP_START)) return 1; // something went wrong
+
+    twi_addr = ((twi_addr<<1)|(read_write&1)); // setting r/w bit (0=write,1=read)
+    TWDR = twi_addr; // send device address
+    TWCR = ((1<<TWINT)|(1<<TWEN)); // reset the flag
+
+    while(!(TWCR&(1<<TWINT))); // wait until transmission completed and ACK/NACK has been received
+    if (((TWSR&0xF8)!=TW_MT_SLA_ACK)&&((TWSR&0xF8)!=TW_MR_SLA_ACK)) return 2;
+    return 0;
+}
+
+// stop I2C communication and release the bus
+void inline TWI_stop() {
+    TWCR = ((1<<TWINT)|(1<<TWEN)|(1<<TWSTO)); // send stop condition
+    while(TWCR&(1<<TWSTO)); // wait until stop condition is executed and bus released
+}
+
+// write a byte of data to the currently addressed device
+uint8_t TWI_write(uint8_t tx_data) {
+    TWDR = tx_data;
+    TWCR = ((1<<TWINT)|(1<<TWEN));
+    while(!(TWCR & (1<<TWINT))); // wait until transmission completed
+    if((TWSR&0xF8)!=TW_MT_DATA_ACK) return 1; // check TWI Status Register, write failed if no ACK
+    return 0;
+}
+
+// read a byte and send ACK (means we want more data)
+uint8_t TWI_ack_read() {
+    TWCR = ((1<<TWINT)|(1<<TWEN)|(1<<TWEA)); // Start read cycle with ACK
+    while(!(TWCR&(1<<TWINT)));
+    flags.TWI_ACK = 1;    
+    if((TWSR&0xF8)!=TW_MR_DATA_ACK) flags.TWI_ACK = 0; // check status, read failed if no ACK
+    return TWDR;
+}
+
+// read the last byte and send NACK (means we're done reading)
+uint8_t TWI_nack_read() {
+    TWCR = ((1<<TWINT)|(1<<TWEN));
+    while(!(TWCR&(1<<TWINT)));
+    flags.TWI_ACK = 1;    
+    if((TWSR&0xF8)!=TW_MR_DATA_NACK) { flags.TWI_ACK = 0; return 0; } // read failed
+    return TWDR;
+}
+
+// read a single register from a device
+uint8_t Read_Reg(uint8_t TWI_addr, uint8_t reg_addr) {
+    TWI_status = TWI_start(TWI_addr, 0); // TW_WRITE = 0
+    if (TWI_status) return 1;
+
+    TWI_status = TWI_write(reg_addr); // specify which register we want
+    if (TWI_status) return 2;
+
+    TWI_status = TWI_start(TWI_addr, 1); // TW_READ = 1 (repeated start)
+    if (TWI_status) return 3;
+
+    TWI_byte = TWI_nack_read(); // read the data
+    TWI_stop();
+    if (!flags.TWI_ACK) return 4;
+    return 0;
+}
+
+// read multiple registers in sequence (handy for reading all sensor data at once)
+uint8_t Read_Reg_N(uint8_t TWI_addr, uint8_t reg_addr, uint8_t bytes, int16_t* data) {
+    uint8_t *p_data = (uint8_t*)data;
+    TWI_status = TWI_start(TWI_addr, 0); // TW_WRITE
+    if (TWI_status) return 1;
+
+    TWI_status = TWI_write(reg_addr); // start register address
+    if (TWI_status) return 2;
+
+    TWI_status = TWI_start(TWI_addr, 1); // TW_READ (repeated start)
+    if (TWI_status) return 3;
+    
+    for (uint8_t i=0; i<bytes-1; i++) {
+        *p_data = TWI_ack_read(); // read with ACK (more bytes coming)
+        if (!flags.TWI_ACK) return 5;
+        p_data++;    
+    }
+    *p_data = TWI_nack_read(); // read last byte with NACK
+    TWI_stop();
+    if (!flags.TWI_ACK) return 4;
+    return 0;
+}
+
+// write a value to a specific register
+uint8_t Write_Reg(uint8_t TWI_addr, uint8_t reg_addr, uint8_t value) {
+    TWI_status = TWI_start(TWI_addr, 0); // TW_WRITE
+    if (TWI_status) return 1;
+
+    TWI_status = TWI_write(reg_addr); // which register to write to
+    if (TWI_status) return 2;
+
+    TWI_status = TWI_write(value); // write the actual value
+    if (TWI_status) return 3;
+
+    TWI_stop();
+    if (!flags.TWI_ACK) return 4;
+
+    return 0;
+}
+
+// this gets the I2C hardware ready to talk to the IMU
+void Wire_begin() {
+    // Initialize TWI hardware
+    TWSR = 0;  // Prescaler = 1 (no division)
+    TWBR = 72; // Bit rate = 100kHz (for 16MHz clock) - slower is more reliable
+    
+    // Initialize flags to known states
+    flags.TX_new_data = 0;
+    flags.TX_finished = 0;
+    flags.TX_buffer1_empty = 1;
+    flags.TX_buffer2_empty = 1;
+    flags.RX_flag = 0;
+    flags.TWI_ACK = 0;
+    TWI_status = 0;
+    TWI_byte = 0;
+}
+
+// sets up the MPU6050 with the right settings so it behaves properly
+void imu_initialize() {
+    // Reset MPU6050 - clears any weird states it might be in
+    Write_Reg(MPU6050_ADDR, 0x6B, 0x80);  // PWR_MGMT_1 reset bit
+    _delay_ms(100);  // give it time to reboot
+    
+    // Wake up MPU6050 and set clock source to X gyro (more stable)
+    Write_Reg(MPU6050_ADDR, 0x6B, 0x01);  // PWR_MGMT_1 wake up
+    _delay_ms(10);
+    
+    // Configure accelerometer for ±2g range (good balance of sensitivity and range)
+    Write_Reg(MPU6050_ADDR, 0x1C, 0x00);  // ACCEL_CONFIG
+    
+    // Configure gyroscope for ±250°/s range (sensitive enough for our needs)
+    Write_Reg(MPU6050_ADDR, 0x1B, 0x00);  // GYRO_CONFIG
+    
+    // Set sample rate divider to get about 50Hz readings
+    Write_Reg(MPU6050_ADDR, 0x19, 0x13);  // SMPLRT_DIV (19 = 50Hz sample rate)
+}
+
+
+// reads all 6 axes of data from the IMU in one go
+void imu_getMotion6(int16_t* ax, int16_t* ay, int16_t* az, 
+                    int16_t* gx, int16_t* gy, int16_t* gz) {
+    uint8_t buffer[14];
+    
+    // Read 14 bytes starting from ACCEL_XOUT_H register
+    if (Read_Reg_N(MPU6050_ADDR, MPU6050_ACCEL_XOUT_H, 14, (int16_t*)buffer) == 0) {
+        // The data comes in big-endian format (high byte then low byte)
+        // so we need to shift and combine them properly
+        
+        // Accelerometer data (6 bytes total)
+        *ax = (int16_t)((buffer[0] << 8) | buffer[1]);  // ACCEL_XOUT_H/L
+        *ay = (int16_t)((buffer[2] << 8) | buffer[3]);  // ACCEL_YOUT_H/L
+        *az = (int16_t)((buffer[4] << 8) | buffer[5]);  // ACCEL_ZOUT_H/L
+        
+        // Skip temperature data (buffer[6] and buffer[7]) - not needed
+        
+        // Gyroscope data (6 bytes total)
+        *gx = (int16_t)((buffer[8] << 8) | buffer[9]);   // GYRO_XOUT_H/L
+        *gy = (int16_t)((buffer[10] << 8) | buffer[11]); // GYRO_YOUT_H/L
+        *gz = (int16_t)((buffer[12] << 8) | buffer[13]); // GYRO_ZOUT_H/L
+    }
+}
+
+// sets up timer1 to generate the right pulses for the servo
+void timer1_servo_init() {
+    // Timer1 in CTC mode, prescaler 8 (gives us 2 cycles per microsecond)
+    TCCR1B = (1 << WGM12) | (1 << CS11);
+    OCR1A = 3000;  // 1500µs * 2 = 3000 (center position)
+    TIMSK1 = (1 << OCIE1A);  // enable interrupt when timer matches
+    
+    // Set servo pin as output and start with it low
+    DDRB |= (1 << SERVO_PIN);
+    PORTB &= ~(1 << SERVO_PIN);
+}
+
+// this interrupt fires when the pulse width time is reached
+ISR(TIMER1_COMPA_vect) {
+    // End of pulse - set pin low
+    PORTB &= ~(1 << SERVO_PIN);
+    TIMSK1 &= ~(1 << OCIE1A);  // disable interrupt until next pulse
+}
+
+
+// gets the servo ready to move (just calls the timer setup)
+void servoMotor_attach(int pin) {
+    // pin parameter is here for compatibility but we ignore it
+    timer1_servo_init();
+}
+
+// tells the servo to move to a specific angle (0 to 180 degrees)
+void servoMotor_write(int angle) {
+    // Convert angle to pulse width in microseconds
+    // 0° = 600µs, 90° = 1500µs, 180° = 2400µs
+    uint16_t pulse = 600 + (angle * 10);  // each degree adds 10µs
+    
+    // Start the pulse (pin high)
+    PORTB |= (1 << SERVO_PIN);
+    OCR1A = pulse * 2;  // convert to timer counts (2 counts per µs)
+    TCNT1 = 0;  // reset timer counter
+    TIMSK1 |= (1 << OCIE1A);  // enable the interrupt that will turn it off
+}
+
+// sets up timer2 for PWM on the D3 LED
+void timer2_led_init() {
+    // Fast PWM mode, non-inverting on OC2B (PD3)
+    TCCR2A = (1 << WGM20) | (1 << WGM21) | (1 << COM2B1);
+    TCCR2B = (1 << CS22);  // Prescaler 64
+    OCR2B = 0;  // start with LED off
+    // Set D3 pin as output
+    DDRD |= (1 << LED_D3_PIN);
+}
+// set the brightness of D3 LED (0 to 255)
+void analogWrite_d3(int value) {
+    OCR2B = value;  // PWM duty cycle controls brightness
+}
+
+// simple functions to set pins high or low
+void digitalWrite_high(volatile uint8_t *port, uint8_t pin) {
+    *port |= (1 << pin);  // set the bit to 1
+}
+void digitalWrite_low(volatile uint8_t *port, uint8_t pin) {
+    *port &= ~(1 << pin);  // set the bit to 0
+}
+
+
+// keeps track of milliseconds since startup
+static volatile uint32_t system_millis = 0;
+
+// sets up timer0 to interrupt every millisecond
+void timer0_init() {
+    // CTC mode, prescaler 64
+    TCCR0A = (1 << WGM01);
+    TCCR0B = (1 << CS01) | (1 << CS00);
+    OCR0A = 249;  // 16MHz/64/250 = 1ms interrupt
+    TIMSK0 = (1 << OCIE0A);  // enable compare match interrupt
+}
+
+// timer0 interrupt fires every 1ms
+ISR(TIMER0_COMPA_vect) {
+    system_millis++;  // just increment a counter
+}
+
+// returns the number of milliseconds since the program started
+unsigned long millis() {
+    unsigned long ms;
+    cli();  // disable interrupts while reading (to avoid corruption)
+    ms = system_millis;
+    sei();  // re-enable interrupts
+    return ms;
+}
+
+
+// setup UART for serial communication at 9600 baud
+void uart_init() {
+    // 9600 baud calculation: 16MHz / 16 / 103 = 9600
+    UBRR0H = 0;
+    UBRR0L = 103;
+    UCSR0B = (1 << TXEN0);  // enable transmitter only (no receive needed)
+    UCSR0C = (1 << UCSZ01) | (1 << UCSZ00);  // 8 bit data, 1 stop bit
+}
+
+// send a single character over serial
+void uart_putchar(char c) {
+    while (!(UCSR0A & (1 << UDRE0)));  // wait for transmit buffer to be empty
+    UDR0 = c;  // send the character
+}
+
+// send a string over serial (handles newlines properly)
+void uart_puts(const char* str) {
+    while (*str) {
+        if (*str == '\n') {
+            uart_putchar('\r');  // add carriage return before newline
+        }
+        uart_putchar(*str++);
+    }
+}
+
+// print an integer (16-bit) over serial
+void uart_putint(int16_t value) {
+    char buffer[8];
+    itoa(value, buffer, 10);  // convert to decimal string
+    uart_puts(buffer);
+}
+
+// print a floating point number with specified decimal places
+void uart_putfloat(float value, uint8_t decimals) {
+    if (value < 0) {
+        uart_putchar('-');  // handle negative numbers
+        value = -value;
+    }
+    
+    int16_t int_part = (int16_t)value;  // get integer part
+    uart_putint(int_part);
+    uart_putchar('.');
+    
+    // handle decimal places one by one
+    float decimal = value - int_part;
+    for (uint8_t i = 0; i < decimals; i++) {
+        decimal *= 10.0f;
+        int16_t digit = (int16_t)decimal;
+        uart_putchar('0' + digit);  // convert digit to character
+        decimal -= digit;
+    }
+}
+
+// setup serial communication
+void Serial_begin() {
+    uart_init();
+}
+
+// these hold all the sensor data and calculated values
+static int16_t ax_raw, ay_raw, az_raw;  // raw accelerometer readings
+static int16_t gx_raw, gy_raw, gz_raw;  // raw gyroscope readings
+static float ax, ay, az;  // accelerometer in g's
+static float gx, gy, gz;  // gyroscope in degrees per second
+static float roll, pitch, yaw = 0;  // orientation angles in degrees
+
+// motion tracking variables (for distance calculation)
+static float vx = 0;      // velocity along X axis
+static float posX = 0;    // position along X axis
+
+// timing variables
+static unsigned long lastPrint = 0;  // when we last printed data
+static unsigned long lastTime = 0;    // for calculating delta time
+
+// calibration offsets (these make the readings accurate)
+static float gyro_offset_x = 0;
+static float gyro_offset_y = 0;
+static float gyro_offset_z = 0;
+static float accel_offset_x = 0;
+static float accel_offset_y = 0;
+static float accel_offset_z = 0;
+
+// this figures out the sensor offsets when the device is stationary
+void mpu_calibrate()
+{
+    uart_puts("\r\nCalibrating IMU...\r\n");
+    uart_puts("Keep sensor still.\r\n");
+
+    // sums for averaging
+    long sum_gx = 0;
+    long sum_gy = 0;
+    long sum_gz = 0;
+
+    long sum_ax = 0;
+    long sum_ay = 0;
+    long sum_az = 0;
+
+    int16_t ax_raw, ay_raw, az_raw;
+    int16_t gx_raw, gy_raw, gz_raw;
+
+    _delay_ms(2000);   // give the sensor time to settle down
+
+    // take lots of samples and average them
+    for (int i = 0; i < CALIBRATION_SAMPLES + 100; i++)
+    {
+        imu_getMotion6(&ax_raw, &ay_raw, &az_raw, &gx_raw, &gy_raw, &gz_raw);
+
+        if (i >= 100)  // discard first 100 samples (sensor might be warming up)
+        {
+            sum_ax += ax_raw;
+            sum_ay += ay_raw;
+            sum_az += az_raw;
+
+            sum_gx += gx_raw;
+            sum_gy += gy_raw;
+            sum_gz += gz_raw;
+        }
+
+        _delay_ms(2);  // small delay between samples
+    }
+
+    // calculate the averages (these are our offsets)
+    gyro_offset_x = (float)sum_gx / CALIBRATION_SAMPLES;
+    gyro_offset_y = (float)sum_gy / CALIBRATION_SAMPLES;
+    gyro_offset_z = (float)sum_gz / CALIBRATION_SAMPLES;
+
+    accel_offset_x = (float)sum_ax / CALIBRATION_SAMPLES;
+    accel_offset_y = (float)sum_ay / CALIBRATION_SAMPLES;
+    accel_offset_z = (float)sum_az / CALIBRATION_SAMPLES;
+
+    // print out what we found
+    uart_puts("Gyro offset X: ");
+    uart_putfloat(gyro_offset_x, 2);
+    uart_puts("\r\nGyro offset Y: ");
+    uart_putfloat(gyro_offset_y, 2);
+    uart_puts("\r\nGyro offset Z: ");
+    uart_putfloat(gyro_offset_z, 2);
+    uart_puts("\r\nAccel offset X: ");
+    uart_putfloat(accel_offset_x, 2);
+    uart_puts("\r\nAccel offset Y: ");
+    uart_putfloat(accel_offset_y, 2);
+    uart_puts("\r\nAccel offset Z: ");
+    uart_putfloat(accel_offset_z, 2);
+    uart_puts("\r\nCalibration complete.\r\n");
+}
+
+// runs once at the beginning to get everything ready
+void setup()
+{
+    Serial_begin();  // start serial communication
+    
+    Wire_begin();              // start I2C for the IMU
+    imu_initialize();          // configure the IMU
+    
+    servoMotor_attach(SERVO_PIN);  // get the servo ready
+    
+    // Set up the built-in LED pin as an output
+    DDRB |= (1 << LED_L_PIN);
+    PORTB &= ~(1 << LED_L_PIN);  // start with it off
+    
+    timer2_led_init();  // setup PWM for the D3 LED
+    
+    mpu_calibrate();   // find the sensor offsets
+    
+    lastTime = millis();  // remember when we started
+}
+
+
+void loop()
+{
+    // read all the raw data from the IMU
+    imu_getMotion6(&ax_raw, &ay_raw, &az_raw, &gx_raw, &gy_raw, &gz_raw);
+
+    // convert raw accelerometer to g's (before offsets for orientation calc)
+    ax = ax_raw / 16384.0;
+    ay = ay_raw / 16384.0;
+    az = az_raw / 16384.0;
+
+    // apply gyro calibration (remove the offset we measured)
+    gx = (gx_raw - gyro_offset_x) / 131.0;
+    gy = (gy_raw - gyro_offset_y) / 131.0;
+    gz = (gz_raw - gyro_offset_z) / 131.0;
+
+    // calculate roll and pitch from accelerometer (this tells us which way is up)
+    roll = atan2(ay, az) * 180 / PI;
+    pitch = atan2(-ax, sqrt(ay * ay + az * az)) * 180 / PI;
+    
+    // now apply accelerometer offsets for the other calculations
+    ax = (ax_raw - accel_offset_x) / 16384.0;
+    ay = (ay_raw - accel_offset_y) / 16384.0;
+    az = (az_raw - accel_offset_z) / 16384.0;
+
+    // figure out how much time has passed since last loop
+    unsigned long now = millis();
+    float dt = (now - lastTime) / 1000.0;
+    lastTime = now;
+
+    // integrate gyro to get yaw (this drifts over time but it's fine)
+    yaw += gz * dt;
+
+    // make the servo follow the yaw angle, but keep it safe
+    float servoYaw = yaw;
+    int outOfRange = 0;  // flag for LED L
+
+    if (servoYaw > 85)
+    {
+        servoYaw = 85;  // clamp to max
+        outOfRange = 1;
+    }
+
+    if (servoYaw < -85)
+    {
+        servoYaw = -85;  // clamp to min
+        outOfRange = 1;
+    }
+
+    int servoAngle = servoYaw + 90;  // convert -85/85 to 5/175 for servo
+    servoMotor_write(servoAngle); 
+
+    // turn on the built-in LED if we're outside the safe range
+    if (outOfRange) {
+        digitalWrite_high(&PORTB, LED_L_PIN);
+    } else {
+        digitalWrite_low(&PORTB, LED_L_PIN);
+    }
+
+    // control D3 brightness based on X acceleration
+    float ax_abs = fabs(ax);
+    int pwm;
+    if (ax_abs < 0.08)
+        pwm = 0;  // off below 0.08g
+    else if (ax_abs > 1.08)
+        pwm = 255;  // full brightness above 1.08g
+    else
+        pwm = 255 * (ax_abs - 0.08);  // linear in between
+
+    analogWrite_d3(pwm);
+
+    // integrate acceleration to get velocity and position
+    float ax_ms = ax * 9.81;  // convert g to m/s²
+
+    vx += ax_ms * dt;  // velocity = acceleration * time
+    posX += vx * dt;   // position = velocity * time
+
+    // print everything once per second
+    if (millis() - lastPrint >= 1000)
+    {
+        uart_puts("Roll: ");
+        uart_putfloat(roll, 2);
+
+        uart_puts("  Pitch: ");
+        uart_putfloat(pitch, 2);
+
+        uart_puts("  Yaw: ");
+        uart_putfloat(yaw, 2);
+
+        uart_puts("  Ax: ");
+        uart_putfloat(ax, 3);
+
+        uart_puts("  Ay: ");
+        uart_putfloat(ay, 3);
+
+        uart_puts("  Az: ");
+        uart_putfloat(az, 3);
+
+        uart_puts("  DistanceX: ");
+        uart_putfloat(posX, 2);
+
+        uart_puts("  Servo Angle: ");
+        uart_putint(servoAngle);
+        uart_puts("\r\n");
+
+        lastPrint = millis();  // reset the timer
+    }
+}
+
+// this is where the program actually starts
+int main() {
+    // turn off interrupts while we set everything up
+    cli();
+    // setup the millis timer
+    timer0_init();
+    // ok now we're ready for interrupts
+    sei();
+    
+    // run the setup function once
+    setup();
+    // then keep running loop forever
+    while (1) {
+        loop();
+        _delay_ms(10);  // small delay to prevent overwhelming the CPU
+    }
+    
+    return 0;  // never actually reaches here
+}
+
