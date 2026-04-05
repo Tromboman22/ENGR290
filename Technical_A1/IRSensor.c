@@ -31,8 +31,8 @@ uint8_t brightness;  // 8 bits unisgned
 
 // cpu freq is 16Mhz, desired baud rate is 9600, 
 // uart baud register rate (ubrr) is 16Mhz(16bits * 9600) - 1 = 103 
-void uart_init() {
-    // set baud rate to same as Serial(9600)
+void uart_init() { 
+    // setup baud rate (9600)
     UBRR0H = 0;  
     UBRR0L = (F_CPU / (16 * baud_val)) - 1;    // ubrr is a 16-bit register, val instde is near 104 (0x0068) so ubbr high is 0
     // Enable uart communication through register B
@@ -42,42 +42,37 @@ void uart_init() {
     UCSR0C = (0 << UCSZ02) | (1 << UCSZ01) | (1 << UCSZ00); //format is called 8N1
 
     // set the pins using the atmel layout
-    DDRB |= (1 << mainLED);  // D11 output (PWM LED)
+    DDRB |= (1 << mainLED);  // D11 output (PWM LED), OC2A
     DDRB |= (1 << yloLED);   // D13 output (Yellow LED)
-    DDRC &= ~(1 << IRPin);   // A0 input (ADC)
+    DDRC &= ~(1 << IRPin);   // ADC0 input analog
 
+    // setup ADC controls
+    ADMUX = (1 << REFS0); // ADC scaling (reading = Vin/5V x 10), also sets ADC0 as the default adc input channel
+    ADCSRA = (1 << ADEN)  // adc enabled
+           | (1 << ADPS2) | (1 << ADPS1) | (1 << ADPS0); // prescaler 2^8 = 128, datasheet says adc clock best between 200khz and 50khz, ~125khz here
+    
+    // setup PWM
+    TCCR2A = (1 << COM2A1) | (1 << COM2A0) // use inverting pwm since arduino nano is active low and inverts the signal
+        | (1 << WGM20) | (1 << WGM21); // simple pwm channel (mode 3), 8-bits, counts up only, super simple
+    TCCR2B = (1 << CS20) | (1 << CS21); // don't need insanely high pwm clock rate for a LED
 }
 
-// PWM setup
-void PWM_init(void){
-    DDRB |= (1 << mainLED); // output
+    
 
-    TCCR2A = (1 << COM2A1) | (1 << WGM20) | (1 << WGM21); // Fast PWM
-    TCCR2B = (1 << CS21); // prescaler 8
-}
-
-
-// ADC control
-void ADC_init(void){
-    ADMUX = (1 << REFS0); // AVcc reference, ADC0 default
-    ADCSRA = (1 << ADEN)  // Enable ADC
-           | (1 << ADPS2) | (1 << ADPS1) | (1 << ADPS0); // prescaler 128
-}
-
-uint16_t ADC_read(void){  // 10-bit resolution
-    ADCSRA |= (1 << ADSC);        // Start conversion
-    while (ADCSRA & (1 << ADSC)); // Wait
-    return ADC;
+uint16_t ADC_read(void){  // 10-bit resolution fits in uint16_t 
+    ADCSRA |= (1 << ADSC);        // flip the adsc bit to start conversion 
+    while (ADCSRA & (1 << ADSC)); // conversion ongoing
+    return ADC;            
 }
 
 
-// Printing with uart (no printf)
+// Printing with uart to serial monitor
 void uart_putchar(char c){
     while (!(UCSR0A & (1 << UDRE0))); // Wait until buffer empty
     UDR0 = c;
 }
 
-void print_string(const char *str){
+void print_string(const char *str){    // c strings are just arrays of char, need to print one letter at a time
     while (*str)
     {
         uart_putchar(*str);
@@ -87,7 +82,7 @@ void print_string(const char *str){
 
 void print_int(int value){
     char buffer[12];
-    itoa(value, buffer, 10);  // convert int to string (base 10)
+    itoa(value, buffer, 10);  // convert int to string (base 10) for printing
     print_string(buffer);
 }
 
@@ -95,8 +90,6 @@ void print_int(int value){
 int main(void) {
   // setup all in this func
   uart_init();
-  ADC_init();
-  PWM_init();
 
   while(1){
     reading = 0; 
@@ -116,7 +109,7 @@ int main(void) {
     }
 
 
-    // account for the edge cases, keeping sensor 10cm from front of vehicle might prove useful...
+    // account for the edge cases
     if(distance >= d2){
       distance = d2;
       edges_indicator = true; // flash yellow led
@@ -127,7 +120,7 @@ int main(void) {
     } 
 
     // scale the brightness linearly from 14cm to 42cm
-    brightness = 255 * (1 - (distance - d1)/(d2-d1)); 
+    brightness = 255 * ((distance - d1)/(d2-d1)); 
     // if the brightness ever inverts for some reason, add failsafe to make sure brightness never goes past edges, as brightness is uint8_t
     // ex: brightness = -4 --> becomes brightness = 252
   
