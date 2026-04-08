@@ -15,10 +15,10 @@ typedef struct
     uint8_t lift_fan;
     volatile uint32_t distance;
     volatile uint32_t pulse_width;
-    const float min_distance;
-    const float max_distance;
-    const uint32_t min_pulse;
-    const uint32_t max_pulse;
+    float min_distance;
+    float max_distance;
+    uint32_t min_pulse;
+    uint32_t max_pulse;
     uint8_t thrust_pwm;
     uint8_t lift_pwm;
 
@@ -26,7 +26,7 @@ typedef struct
 
 void US_init(US_Sensor *sensor, uint8_t trig_pin, uint8_t echo_pin, uint8_t thrust_fan, uint8_t lift_fan);
 
-bool control_fans(US_Sensor *sensor);
+_Bool control_fans(US_Sensor *sensor);
 
 void trigger_pulse(US_Sensor *sensor);
 

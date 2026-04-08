@@ -4,7 +4,7 @@
 #include <stdint.h>
 
 typedef struct {
-    static volatile uint32_t system_millis;
+    uint32_t system_millis;
 
     int16_t ax_raw, ay_raw, az_raw; // raw accelerometer readings
     int16_t gx_raw, gy_raw, gz_raw; // raw gyroscope readings

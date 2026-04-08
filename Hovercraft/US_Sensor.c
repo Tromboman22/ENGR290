@@ -39,12 +39,12 @@ void US_init(US_Sensor *sensor, uint8_t trig_pin, uint8_t echo_pin, uint8_t thru
     DDRD &= ~(1 << sensor->echo_pin); // Set echo_pin as input
 }
 
-bool control_fans(US_Sensor *sensor)
+_Bool control_fans(US_Sensor *sensor)
 {
     trigger_pulse(sensor);
     sensor->pulse_width = pulse_length(sensor);
-    uint32_t distance = getterDistance(sensor->pulse_width, sensor);
-    if (set_fanspeed(distance, sensor)) // true while not zero
+    sensor->distance = getterDistance(sensor->pulse_width);
+    if (set_fanspeed(sensor)) // true while not zero
     {
         return true; // signal to the driver file that you are stopped and need to look around
     }
@@ -88,21 +88,21 @@ uint32_t getterDistance(uint32_t pulseVal)
 } // end of getDistance
 
 // use the code for the LED pwm in the US sensor to dictate how much power to give to the fans
-bool set_fanspeed(uint32_t distance, US_Sensor *sensor)
+_Bool set_fanspeed(US_Sensor *sensor)
 { // function that will use distance to linearly increase brightness from 0-255
-    bool stopped = false;
-    if (distance <= sensor->min_distance) // edge condition low
+    _Bool stopped = false;
+    if (sensor->distance <= sensor->min_distance) // edge condition low
     {
-        distance = sensor->min_distance;
+        sensor->distance = sensor->min_distance;
         stopped = true;
     }
 
-    if (distance >= sensor->max_distance) // edege condition high
-        distance = sensor->max_distance;
+    if (sensor->distance >= sensor->max_distance) // edege condition high
+        sensor->distance = sensor->max_distance;
 
     sensor->thrust_pwm = sensor->max_fan_speed -
                  (sensor->max_fan_speed - sensor->min_fan_speed) * // linearization over distance range
-                     (distance - sensor->min_distance) /
+                     (sensor->distance - sensor->min_distance) /
                      (sensor->max_distance - sensor->min_distance); // basically find the fraction of max that you're at
 
     sensor->lift_pwm = (int)sqrt(sensor->thrust_pwm / 255.0) * 255; // needs a bit more juice...
