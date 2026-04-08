@@ -91,7 +91,7 @@ bool set_fanspeed(US_Sensor *sensor)
                      (sensor->distance - sensor->min_distance) /
                      (sensor->max_distance - sensor->min_distance); // basically find the fraction of max that you're at
 
-    sensor->lift_pwm = (uint8_t)sqrt(sensor->thrust_pwm / 255.0) * 255; // needs a bit more juice...
+    sensor->lift_pwm = sensor->thrust_pwm; // needs a bit more juice...
 
     return stopped;
 }

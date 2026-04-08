@@ -1,5 +1,9 @@
 #include "IMU.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <avr/interrupt.h>
 #include <avr/io.h>
 #include <util/delay.h>
@@ -19,15 +23,12 @@
 #define PI 3.14159265359f
 #define CALIBRATION_SAMPLES 1000
 
-#define SERVO_PIN 
-#define IMU_PIN
+#define SERVO_PIN PD6
 
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 
-typedef struct
+
+volatile struct
 {
     uint8_t TX_new_data : 1;      // got new data to send
     uint8_t TX_finished : 1;      // done sending
@@ -37,24 +38,17 @@ typedef struct
     uint8_t TWI_ACK : 1;          // did we get an acknowledge?
 } flags;
 
-void IMU_Data_init(IMU_Data *data, uint8_t servo_pin, uint8_t IMUpin)
+void IMU_Data_init(IMU_Data *data)
 {
-    data->SERVO_PIN = servo_pin;
-    data->IMU_PIN = IMUpin;
-
     data->ax = data->ay = data->az = 0;
     data->gx = data->gy = data->gz = 0;
-
-    data->ax_g = data->ay_g = data->az_g = 0;
-    data->gx_dps = data->gy_dps = data->gz_dps = 0;
-
     data->ax_offset = data->ay_offset = data->az_offset = 0;
     data->gx_offset = data->gy_offset = data->gz_offset = 0;
-
     data->roll = data->pitch = data->yaw = 0;
-
     data->accel_offset_x = data->accel_offset_y = data->accel_offset_z = 0;
     data->gyro_offset_x = data->gyro_offset_y = data->gyro_offset_z = 0;
+    data->lastTime = 0;
+
 }
 
 uint8_t TWI_status, TWI_byte; // status codes and data byte
@@ -78,7 +72,7 @@ uint8_t TWI_start(uint8_t twi_addr, uint8_t read_write)
     return 0;
 }
 
-void inline TWI_stop()
+void TWI_stop()
 {
     TWCR = ((1 << TWINT) | (1 << TWEN) | (1 << TWSTO)); // send stop condition
     while (TWCR & (1 << TWSTO))
@@ -325,11 +319,9 @@ void mpu_calibrate(IMU_Data *data)
     data->accel_offset_x = sum_ax / CALIBRATION_SAMPLES;
     data->accel_offset_y = sum_ay / CALIBRATION_SAMPLES;
     data->accel_offset_z = sum_az / CALIBRATION_SAMPLES;
-
-    uart_puts("IMU calibration complete.\r\n");
 }
 
-void setup(IMU_Data *data)
+void setupimu(IMU_Data *data)
 {
     I2C_begin();     // start I2C for the IMU
     imu_initialize(); // configure the IMU
@@ -339,16 +331,15 @@ void setup(IMU_Data *data)
     mpu_calibrate(data); // find the sensor offsets
 }
 
-void IMU_calcs(IMU_Data *data, int offset)
+void IMU_calcs(IMU_Data *data, int offset, float system_millis)
 {
-    // essentially the contents of the loop() from TA#2
     imu_getMotion6(&data->ax_raw, &data->ay_raw, &data->az_raw,
                    &data->gx_raw, &data->gy_raw, &data->gz_raw);
 
     float ax = (data->ax_raw - data->accel_offset_x) / ACCEL_SCALE;
     float ay = (data->ay_raw - data->accel_offset_y) / ACCEL_SCALE;
     float az = (data->az_raw - data->accel_offset_z) / ACCEL_SCALE;
-
+    float ax_raw, ay_raw, az_raw;
     float gx = (data->gx_raw - data->gyro_offset_x) / GYRO_SCALE;
     float gy = (data->gy_raw - data->gyro_offset_y) / GYRO_SCALE;
     float gz = (data->gz_raw - data->gyro_offset_z) / GYRO_SCALE;
@@ -356,18 +347,22 @@ void IMU_calcs(IMU_Data *data, int offset)
     data->roll = atan2(ay, az) * 180 / PI;
     data->pitch = atan2(-ax, sqrt(ay * ay + az * az)) * 180 / PI;
 
-    ax = (ax_raw - accel_offset_x) / ACCEL_SCALE;
-    ay = (ay_raw - accel_offset_y) / ACCEL_SCALE;
-    az = (az_raw - accel_offset_z) / ACCEL_SCALE;
+    ax = (data->ax_raw - data->accel_offset_x) / ACCEL_SCALE;
+    ay = (data->ay_raw - data->accel_offset_y) / ACCEL_SCALE;
+    az = (data->az_raw - data->accel_offset_z) / ACCEL_SCALE;
+
+
+
+
 
     unsigned long now = system_millis;
-    float dt = (now - lastTime) / 1000.0;
-    lastTime = now;
+    float dt = (now - data->lastTime) / 1000.0;
+    data->lastTime = now;
 
-    yaw += gz * dt;
+    data->yaw += gz * dt;
 
     // make the servo follow the yaw angle, but keep it safe
-    float servoYaw = yaw + offset;
+    float servoYaw = data->yaw + offset;
     int outOfRange = 0; // flag for LED L
 
     if (servoYaw > 85)
@@ -383,7 +378,6 @@ void IMU_calcs(IMU_Data *data, int offset)
     int servoAngle = servoYaw + 90; // convert -85/85 to 5/175 for servo
     servoMotor_write(servoAngle);
 }
-
 
 
 #ifdef __cplusplus

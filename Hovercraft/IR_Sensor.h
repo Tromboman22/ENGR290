@@ -6,6 +6,10 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 // typedef struct {
 //     uint8_t IRPin;     // ADC pin for the IR sensor
 //     uint16_t reading;
@@ -14,5 +18,8 @@
 //     const uint8_t d2;  
 // } IRSensor;
 
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* IR_SENSOR_H_ */

@@ -6,6 +6,10 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 // struct data
 
 typedef struct
@@ -38,5 +42,9 @@ uint32_t pulse_length(US_Sensor *sensor);
 uint32_t getterDistance(uint32_t pulseVal);
 
 bool set_fanspeed(US_Sensor *sensor);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* US_SENSOR_H_ */

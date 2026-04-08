@@ -1,23 +1,26 @@
 #ifndef IMU_H_
 #define IMU_H_
+float lastTime;
+
 
 #include <stdint.h>
 
-typedef struct {
-    uint32_t system_millis;
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+typedef struct {
     int16_t ax_raw, ay_raw, az_raw; // raw accelerometer readings
     int16_t gx_raw, gy_raw, gz_raw; // raw gyroscope readings
-
     float ax, ay, az; // accelerometer in g's
     float gx, gy, gz; // gyroscope in degrees per second
-
     float ax_offset, ay_offset, az_offset; // accelerometer offsets
     float gx_offset, gy_offset, gz_offset; // gyroscope offsets
-
     float roll, pitch, yaw;                               // orientation angles in degrees
     float gyro_offset_x, gyro_offset_y, gyro_offset_z;    // gyro calibration offsets
-    float accel_offset_x, accel_offset_y, accel_offset_z; // accel calibration offsets
+    float accel_offset_x, accel_offset_y, accel_offset_z;
+    float lastTime;
 } IMU_Data;
 
 void IMU_Data_init(IMU_Data *data);
@@ -30,6 +33,7 @@ uint8_t Read_Reg(uint8_t TWI_addr, uint8_t reg_addr, int16_t* data);
 uint8_t Read_Reg_N(uint8_t TWI_addr, uint8_t reg_addr, uint8_t bytes, int16_t* data);
 uint8_t Write_Reg(uint8_t TWI_addr, uint8_t reg_addr, uint8_t value);
 void imu_initialize();
+void setupimu(IMU_Data *data);
 void imu_getMotion6(int16_t* ax, int16_t* ay, int16_t* az, 
                     int16_t* gx, int16_t* gy, int16_t* gz);
 void timer1_servo_init();
@@ -41,6 +45,10 @@ void I2C_begin();
 
 void mpu_calibrate(IMU_Data *data);
 
-void IMU_calcs(IMU_Data *data, int offset);
+void IMU_calcs(IMU_Data *data, int offset, float system_millis);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* IMU_H_ */

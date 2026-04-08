@@ -10,11 +10,10 @@
 // Pins to define
 #define USPin_trig PB3
 #define USPin_echo PD2
-#define IRPin PB0
-#define IMUPin
-#define thrust_fan
-#define lift_fan
-#define servo_pin
+#define IRPin PC0
+#define THRUSTfan PD6
+#define LIFTfan PD5
+#define servo_pin PB1
 
 #include <Arduino.h>
 #include <avr/interrupt.h>
@@ -35,27 +34,28 @@ extern "C" {
 typedef struct
 {
     US_Sensor us_sensor;
-    IMU_Data imu_data;
-    IRSensor ir_sensor;
+    // IMU_Data imu_data;
+    // IRSensor ir_sensor;
 
 } Hovercraft;
 
 Hovercraft hvc;
+int system_millis = 0;
 
 ISR(TIMER0_COMPA_vect)
 {
     system_millis++;
 }
 
-uint32_t millis()
+uint32_t sys_millis()
 {
     return system_millis;
 }
 
 void hvc_init(Hovercraft *hvc)
 {
-    US_init(&hvc->us_sensor, USPin_trig, USPin_echo, thrust_fan, lift_fan);
-    IMU_Data_init(&hvc->imu_data, servo_pin, IMUPin);
+    US_init(&hvc->us_sensor, USPin_trig, USPin_echo, THRUSTfan, LIFTfan);
+    IMU_Data_init(&hvc->imu_data);
     // IRSensor_init(&hvc->ir_sensor, IRPin, ADC_sample_max);
 }
 
@@ -76,20 +76,21 @@ void uart_init()
              | (1 << ADPS2) | (1 << ADPS1) | (1 << ADPS0); // prescaler 2^8 = 128, datasheet says adc clock best between 200khz and 50khz, ~125khz here
 
     // Example Pin setups...
-    DDRB |= (1 << thrust_fan);
-    DDRB |= (1 << lift_fan);
+    DDRD |= (1 << THRUSTfan) | (1 << LIFTfan);
     DDRB |= (1 << servo_pin);
     DDRC &= ~(1 << IRPin);
-    DDRC &= ~(1 << IMUPin);
 
     // PB3, PD3 → PWM Timer 2
     // PB1, PB2 → PWM Timer 1 (Servo)
     // PD5, PD6 → PWM Timer 0 (fans?)
 
     // setup PWM
-    TCCR2A = (1 << COM2A1) | (1 << COM2A0)  // use inverting pwm since arduino nano is active low and inverts the signal
+    TCCR2A = (1 << COM2A1) | (0 << COM2A0)  // use inverting pwm since arduino nano is active low and inverts the signal
              | (1 << WGM20) | (1 << WGM21); // simple pwm channel (mode 3), 8-bits, counts up only, super simple
-    TCCR2B = (1 << CS20) | (1 << CS21);     // don't need insanely high pwm clock rate for a LED
+    TCCR2B = (1 << CS20) | (1 << CS21);     // is this even necessary for fans
+    
+    TCCR1A = (1 << COM1A1) | (1 << WGM10); // Fast PWM 8-bit, OCR1A
+    TCCR1B = (1 << WGM12) | (1 << CS10);   // No prescaler                  // PB1 PWM duty
 }
 
 uint16_t ADC_read(void)
@@ -103,32 +104,59 @@ uint16_t ADC_read(void)
 void timer0_init()
 {
     // CTC mode, prescaler 64
-    TCCR0A = (1 << WGM01);
-    TCCR0B = (1 << CS01) | (1 << CS00);
-    OCR0A = 249;            // 16MHz/64/250 = 1ms interrupt
-    TIMSK0 = (1 << OCIE0A); // enable compare match interrupt
-}
-// timer0 interrupt fires every 1ms
-ISR(TIMER0_COMPA_vect)
-{
-    system_millis++; // just increment a counter
+    // Timer0 setup for ~31 kHz (16MHz / 512)
+    TCCR0A = (1 << WGM00) | (1 << WGM01) | (1 << COM0A1) | (1 << COM0B1); // Fast PWM, non-inverting
+    TCCR0B = (1 << CS00); // prescaler 1
+    OCR0A = 128;      
 }
 
+void timer1_init()
+{
+    TCCR1A = (1 << WGM10) | (1 << COM1A1); // PB1
+    TCCR1B = (1 << WGM12) | (1 << CS10);   // no prescaler
+    OCR1A = 128; 
+}
+
+void uart_send_reading(char data){
+  while (!(UCSR0A & (1 << UDRE0))); //buffer is empty then sends
+    UDR0 = data; 
+}//end of uart send reading
+
+//this functon reccursively calls uart_send_reading to send a combination of characters which become a string.
+void uart_string(const char* str) { 
+	while (*str) { // while string not empty
+		uart_send_reading(*str++); //send string to transmission fx UART
+	}
+}//end of uart string
+
+int offset;
 void setup()
 {
     uart_init();
     hvc_init(&hvc);
-    hvc.imu_data.setup(&hvc.imu_data);
+    setupimu(&hvc.imu_data);
+    offset = -90;
 }
 
 void loop()
 {
-    if (hvc.us_sensor.control_fans(&hvc.us_sensor))
+    int control = 0;
+    if (control_fans(&hvc.us_sensor))
     {
+        control = 100;
         // look around
+        
+    }
+    OCR0A = hvc.us_sensor.thrust_pwm;
+    OCR1A = hvc.us_sensor.lift_pwm;
+
+    if(hvc.us_sensor.thrust_pwm > 0 && hvc.us_sensor.thrust_pwm < 255){
+        char buffer[32];
+    snprintf(buffer, sizeof(buffer), "Distance: %lu cm\r\n", hvc.us_sensor.distance);
+    uart_string(buffer);
     }
 
-    hvc.imu_data.IMU_calcs(&hvc.imu_data, 0);
+    //IMU_calcs(&hvc.imu_data, offset, sys_millis());
 }
 
 
