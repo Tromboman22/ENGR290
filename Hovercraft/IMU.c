@@ -19,7 +19,8 @@
 #define PI 3.14159265359f
 #define CALIBRATION_SAMPLES 1000
 
-#define SERVO_PIN PB1
+#define SERVO_PIN 
+#define IMU_PIN
 
 typedef struct
 {
@@ -31,9 +32,10 @@ typedef struct
     uint8_t TWI_ACK : 1;          // did we get an acknowledge?
 } flags;
 
-void IMU_Data_init(IMU_Data *data)
+void IMU_Data_init(IMU_Data *data, uint8_t servo_pin, uint8_t IMUpin)
 {
-    data->SERVO_PIN = PB1;
+    data->SERVO_PIN = servo_pin;
+    data->IMU_PIN = IMUpin;
 
     data->ax = data->ay = data->az = 0;
     data->gx = data->gy = data->gz = 0;
@@ -209,6 +211,7 @@ void imu_initialize()
 
     // Set sample rate divider to get about 50Hz readings
     Write_Reg(MPU6050_ADDR, 0x19, 0x13); // SMPLRT_DIV (19 = 50Hz sample rate)
+    
 }
 
 void imu_getMotion6(int16_t *ax, int16_t *ay, int16_t *az,
@@ -321,7 +324,17 @@ void mpu_calibrate(IMU_Data *data)
     uart_puts("IMU calibration complete.\r\n");
 }
 
-bool IMU_calcs(IMU_Data *data, int offset)
+void setup(IMU_Data *data)
+{
+    I2C_begin();     // start I2C for the IMU
+    imu_initialize(); // configure the IMU
+
+    servoMotor_attach(SERVO_PIN); // get the servo ready
+
+    mpu_calibrate(data); // find the sensor offsets
+}
+
+void IMU_calcs(IMU_Data *data, int offset)
 {
     // essentially the contents of the loop() from TA#2
     imu_getMotion6(&data->ax_raw, &data->ay_raw, &data->az_raw,
