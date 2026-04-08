@@ -47,8 +47,8 @@ ISR(TIMER1_COMPA_vect);
 
 void I2C_begin();
 
-void mpu_calibrate();
+void mpu_calibrate(IMU_Data *data);
 
-bool IMU_calcs();
+bool IMU_calcs(IMU_Data *data, int offset);
 
 #endif /* IMU_H_ */

@@ -291,11 +291,8 @@ void servoMotor_write(int angle)
 }
 
 // this figures out the sensor offsets when the device is stationary
-void mpu_calibrate()
+void mpu_calibrate(IMU_Data *data)
 {
-    uart_puts("\r\nCalibrating IMU...\r\n");
-    uart_puts("Keep sensor still.\r\n");
-
     // sums for averaging
     long sum_gx = 0;
     long sum_gy = 0;
@@ -330,13 +327,13 @@ void mpu_calibrate()
     }
 
     // calculate offsets
-    imu_data.gyro_offset_x = sum_gx / CALIBRATION_SAMPLES;
-    imu_data.gyro_offset_y = sum_gy / CALIBRATION_SAMPLES;
-    imu_data.gyro_offset_z = sum_gz / CALIBRATION_SAMPLES;
+    data->gyro_offset_x = sum_gx / CALIBRATION_SAMPLES;
+    data->gyro_offset_y = sum_gy / CALIBRATION_SAMPLES;
+    data->gyro_offset_z = sum_gz / CALIBRATION_SAMPLES;
 
-    imu_data.accel_offset_x = sum_ax / CALIBRATION_SAMPLES;
-    imu_data.accel_offset_y = sum_ay / CALIBRATION_SAMPLES;
-    imu_data.accel_offset_z = sum_az / CALIBRATION_SAMPLES;
+    data->accel_offset_x = sum_ax / CALIBRATION_SAMPLES;
+    data->accel_offset_y = sum_ay / CALIBRATION_SAMPLES;
+    data->accel_offset_z = sum_az / CALIBRATION_SAMPLES;
 
     uart_puts("IMU calibration complete.\r\n");
 }
@@ -347,13 +344,13 @@ bool IMU_calcs(IMU_Data *data, int offset)
     imu_getMotion6(&data->ax_raw, &data->ay_raw, &data->az_raw,
                    &data->gx_raw, &data->gy_raw, &data->gz_raw);
 
-    ax = (data->ax_raw - data->accel_offset_x) / ACCEL_SCALE;
-    ay = (data->ay_raw - data->accel_offset_y) / ACCEL_SCALE;
-    az = (data->az_raw - data->accel_offset_z) / ACCEL_SCALE;
+    float ax = (data->ax_raw - data->accel_offset_x) / ACCEL_SCALE;
+    float ay = (data->ay_raw - data->accel_offset_y) / ACCEL_SCALE;
+    float az = (data->az_raw - data->accel_offset_z) / ACCEL_SCALE;
 
-    gx = (data->gx_raw - data->gyro_offset_x) / GYRO_SCALE;
-    gy = (data->gy_raw - data->gyro_offset_y) / GYRO_SCALE;
-    gz = (data->gz_raw - data->gyro_offset_z) / GYRO_SCALE;
+    float gx = (data->gx_raw - data->gyro_offset_x) / GYRO_SCALE;
+    float gy = (data->gy_raw - data->gyro_offset_y) / GYRO_SCALE;
+    float gz = (data->gz_raw - data->gyro_offset_z) / GYRO_SCALE;
 
     data->roll = atan2(ay, az) * 180 / PI;
     data->pitch = atan2(-ax, sqrt(ay * ay + az * az)) * 180 / PI;
