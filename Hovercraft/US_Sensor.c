@@ -7,6 +7,8 @@
 #include <util/delay.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <stdbool.h>
+#include <math.h>
 
 
 #ifdef __cplusplus
@@ -28,31 +30,15 @@ void US_init(US_Sensor *sensor, uint8_t trig_pin, uint8_t echo_pin, uint8_t thru
     sensor->min_pulse = 411;  // Closest object 14 * 58 cm (distance * 58) time of flight sound (411)
     sensor->max_pulse = 1233; // Furthest object 42 * 58 cm (1233)
     // PWM ranges for fan control
-    const int min_fan_speed = 0;   // approx 0%
-    const int max_fan_speed = 255; // 100%
+    sensor->min_fan_speed = 0;   // approx 0%
+    sensor->max_fan_speed = 255; // 100%
 
-    uint8_t thrust_pwm = 0;
-    uint8_t lift_pwm = 0;
+    sensor->thrust_pwm = 0;
+    sensor->lift_pwm = 0;
 
     // Set trig_pin as output and echo_pin as input
     DDRB |= (1 << sensor->trig_pin);  // Set trig_pin as output
     DDRD &= ~(1 << sensor->echo_pin); // Set echo_pin as input
-}
-
-_Bool control_fans(US_Sensor *sensor)
-{
-    trigger_pulse(sensor);
-    sensor->pulse_width = pulse_length(sensor);
-    sensor->distance = getterDistance(sensor->pulse_width);
-    if (set_fanspeed(sensor)) // true while not zero
-    {
-        return true; // signal to the driver file that you are stopped and need to look around
-    }
-    else
-    {
-        return false;
-        // implement a "look around" algorithm
-    }
 }
 
 void trigger_pulse(US_Sensor *sensor)
@@ -88,9 +74,9 @@ uint32_t getterDistance(uint32_t pulseVal)
 } // end of getDistance
 
 // use the code for the LED pwm in the US sensor to dictate how much power to give to the fans
-_Bool set_fanspeed(US_Sensor *sensor)
+bool set_fanspeed(US_Sensor *sensor)
 { // function that will use distance to linearly increase brightness from 0-255
-    _Bool stopped = false;
+    bool stopped = false;
     if (sensor->distance <= sensor->min_distance) // edge condition low
     {
         sensor->distance = sensor->min_distance;
@@ -105,9 +91,25 @@ _Bool set_fanspeed(US_Sensor *sensor)
                      (sensor->distance - sensor->min_distance) /
                      (sensor->max_distance - sensor->min_distance); // basically find the fraction of max that you're at
 
-    sensor->lift_pwm = (int)sqrt(sensor->thrust_pwm / 255.0) * 255; // needs a bit more juice...
+    sensor->lift_pwm = (uint8_t)sqrt(sensor->thrust_pwm / 255.0) * 255; // needs a bit more juice...
 
-    return (stopped);
+    return stopped;
+}
+
+bool control_fans(US_Sensor *sensor)
+{
+    trigger_pulse(sensor);
+    sensor->pulse_width = pulse_length(sensor);
+    sensor->distance = getterDistance(sensor->pulse_width);
+    if (set_fanspeed(sensor)) // true while not zero
+    {
+        return true; // signal to the driver file that you are stopped and need to look around
+    }
+    else
+    {
+        return false;
+        // implement a "look around" algorithm
+    }
 }
 
 

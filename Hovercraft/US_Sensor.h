@@ -4,6 +4,7 @@
 #define US_SENSOR_H_
 
 #include <stdint.h>
+#include <stdbool.h>
 
 // struct data
 
@@ -19,6 +20,8 @@ typedef struct
     float max_distance;
     uint32_t min_pulse;
     uint32_t max_pulse;
+    uint8_t min_fan_speed;
+    uint8_t max_fan_speed;
     uint8_t thrust_pwm;
     uint8_t lift_pwm;
 
@@ -26,7 +29,7 @@ typedef struct
 
 void US_init(US_Sensor *sensor, uint8_t trig_pin, uint8_t echo_pin, uint8_t thrust_fan, uint8_t lift_fan);
 
-_Bool control_fans(US_Sensor *sensor);
+bool control_fans(US_Sensor *sensor);
 
 void trigger_pulse(US_Sensor *sensor);
 
@@ -34,6 +37,6 @@ uint32_t pulse_length(US_Sensor *sensor);
 
 uint32_t getterDistance(uint32_t pulseVal);
 
-void set_fanspeed(uint32_t distance, US_Sensor *sensor);
+bool set_fanspeed(US_Sensor *sensor);
 
 #endif /* US_SENSOR_H_ */
