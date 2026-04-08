@@ -8,8 +8,6 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-typedef struct
-{
 #define MPU6050_ADDR 0x68
 #define MPU6050_PWR_MGMT_1 0x6B
 #define MPU6050_ACCEL_XOUT_H 0x3B
@@ -22,21 +20,6 @@ typedef struct
 #define CALIBRATION_SAMPLES 1000
 
 #define SERVO_PIN PB1
-    static volatile uint32_t system_millis;
-
-    int16_t ax_raw, ay_raw, az_raw; // raw accelerometer readings
-    int16_t gx_raw, gy_raw, gz_raw; // raw gyroscope readings
-
-    float ax, ay, az; // accelerometer in g's
-    float gx, gy, gz; // gyroscope in degrees per second
-
-    float ax_offset, ay_offset, az_offset; // accelerometer offsets
-    float gx_offset, gy_offset, gz_offset; // gyroscope offsets
-
-    float roll, pitch, yaw;                               // orientation angles in degrees
-    float gyro_offset_x, gyro_offset_y, gyro_offset_z;    // gyro calibration offsets
-    float accel_offset_x, accel_offset_y, accel_offset_z; // accel calibration offsets
-} IMU_Data;
 
 typedef struct
 {

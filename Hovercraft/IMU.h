@@ -4,29 +4,21 @@
 #include <stdint.h>
 
 typedef struct {
-    uint8_t MPU6050_ADDR;
-    uint8_t MPU6050_PWR_MGMT_1;
-    uint8_t MPU6050_ACCEL_XOUT_H;
+    static volatile uint32_t system_millis;
 
-    float ACCEL_SCALE;
-    float GYRO_SCALE;
+    int16_t ax_raw, ay_raw, az_raw; // raw accelerometer readings
+    int16_t gx_raw, gy_raw, gz_raw; // raw gyroscope readings
 
-    float GRAVITY;
-    float PI;
-    int CALIBRATION_SAMPLES;
+    float ax, ay, az; // accelerometer in g's
+    float gx, gy, gz; // gyroscope in degrees per second
 
-    uint8_t SERVO_PIN;
+    float ax_offset, ay_offset, az_offset; // accelerometer offsets
+    float gx_offset, gy_offset, gz_offset; // gyroscope offsets
 
+    float roll, pitch, yaw;                               // orientation angles in degrees
+    float gyro_offset_x, gyro_offset_y, gyro_offset_z;    // gyro calibration offsets
+    float accel_offset_x, accel_offset_y, accel_offset_z; // accel calibration offsets
 } IMU_Data;
-
-typedef struct {
-    uint8_t TX_new_data;      // got new data to send
-    uint8_t TX_finishe1;      // done sending
-    uint8_t TX_buffer1_empty; // first buffer is empty
-    uint8_t TX_buffer2_empty; // second buffer is empty
-    uint8_t RX_flag;           // receiving status
-    uint8_t TWI_ACK;          // did we get an acknowledge?
-} flags;
 
 void IMU_Data_init(IMU_Data *data);
 uint8_t TWI_start(uint8_t twi_addr, uint8_t read_write);
