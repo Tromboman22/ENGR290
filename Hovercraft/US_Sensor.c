@@ -8,6 +8,11 @@
 #include <stdlib.h>
 #include <stdio.h>
 
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 void US_init(US_Sensor *sensor, uint8_t trig_pin, uint8_t echo_pin, uint8_t thrust_fan, uint8_t lift_fan)
 {
     // sensor and pwm pins
@@ -104,3 +109,8 @@ bool set_fanspeed(uint32_t distance, US_Sensor *sensor)
 
     return (stopped);
 }
+
+
+#ifdef __cplusplus
+}
+#endif

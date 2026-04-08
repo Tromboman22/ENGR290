@@ -27,6 +27,11 @@
 #include "IMU.h"
 #include "IR_Sensor.h"
 
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef struct
 {
     US_Sensor us_sensor;
@@ -125,3 +130,8 @@ void loop()
 
     hvc.imu_data.IMU_calcs(&hvc.imu_data, 0);
 }
+
+
+#ifdef __cplusplus
+}
+#endif

@@ -22,6 +22,11 @@
 #define SERVO_PIN 
 #define IMU_PIN
 
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef struct
 {
     uint8_t TX_new_data : 1;      // got new data to send
@@ -378,3 +383,9 @@ void IMU_calcs(IMU_Data *data, int offset)
     int servoAngle = servoYaw + 90; // convert -85/85 to 5/175 for servo
     servoMotor_write(servoAngle);
 }
+
+
+
+#ifdef __cplusplus
+}
+#endif
