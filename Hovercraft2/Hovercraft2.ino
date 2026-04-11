@@ -430,6 +430,9 @@ int main(void)
         int index = 0;
         imu_update();
         if (control_fans(&hvc.us_sensor)){
+            uart_puts("distance: ");
+            uart_putfloat(hvc.us_sensor.distance, 1);
+            uart_puts("\n");
             set_lift(0);
             set_thrust(0);
             uart_puts("initial angle: ");
@@ -479,6 +482,9 @@ int main(void)
             
             // now turning logic for 90 degrees  
         } else {
+            uart_puts("distance: ");
+            uart_putfloat(hvc.us_sensor.distance, 1);
+            uart_puts("\n");
             set_lift(255 - hvc.us_sensor.lift_pwm);
             set_thrust(255 - hvc.us_sensor.thrust_pwm);
         }
