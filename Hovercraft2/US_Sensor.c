@@ -25,8 +25,8 @@ void US_init(US_Sensor *sensor, uint8_t trig_pin, uint8_t echo_pin, uint8_t thru
 
     sensor->distance = 0;
     sensor->pulse_width = 0;
-    sensor->min_distance = 28.0;
-    sensor->max_distance = 34.0;
+    sensor->min_distance = 20.0;
+    sensor->max_distance = 25.0;
     sensor->min_pulse = 411;  // Closest object 14 * 58 cm (distance * 58) time of flight sound (411)
     sensor->max_pulse = 1233; // Furthest object 42 * 58 cm (1233)
     // PWM ranges for fan control
@@ -105,14 +105,37 @@ bool set_fanspeed(US_Sensor *sensor)
 bool control_fans(US_Sensor *sensor)
 {
     int avg = 0;
+    int values[] = {0,0,0,0,0,0,0,0,0,0};
+    int largest = 0;
+    int large_index = 0;
+    int smallest = 999;
+    int small_index = 0;
     for (int i = 0; i < 10; i++){
         trigger_pulse(sensor);
         sensor->pulse_width = pulse_length(sensor);
         sensor->distance = getterDistance(sensor->pulse_width);
-        avg += sensor->distance;
+        values[i] = sensor->distance;
         _delay_us(1);
+        if(values[i] < smallest){
+            smallest = values[i];
+            int small_index = i;
+        }
+        if(values[i] < largest){
+            largest = values[i];
+            int large_index = i;
+        }
     }
-    avg = avg/10;
+    for(int i = 0; i < 10; i++)
+    {
+        if(i == small_index){
+            // nothing
+        } else if(i == large_index){
+            // nothing
+        } else {
+            avg += values[i];
+        }
+    }
+    avg = avg/8;
     sensor->distance = avg;
     if (set_fanspeed(sensor)) // true while not zero
     {
@@ -125,6 +148,45 @@ bool control_fans(US_Sensor *sensor)
     }
 }
 
+
+void searching(US_Sensor *sensor)
+{
+    int values[] = {0,0,0,0,0,0,0,0,0,0};
+    int avg = 0;
+    int largest = 0;
+    int large_index = 0;
+    int smallest = 999;
+    int small_index = 0;
+    for (int i = 0; i < 10; i++){
+        trigger_pulse(sensor);
+        sensor->pulse_width = pulse_length(sensor);
+        sensor->distance = getterDistance(sensor->pulse_width);
+        values[i] = sensor->distance;
+        _delay_us(1);
+        if(values[i] < smallest){
+            smallest = values[i];
+            small_index = i;
+        }
+        if(values[i] < largest){
+            largest = values[i];
+            large_index = i;
+        }
+    }
+    for(int i = 0; i < 10; i++)
+    {
+        if(i == small_index){
+            // nothing
+        } else if(i == large_index){
+            // nothing
+        } else {
+            avg += values[i];
+        }
+    }
+    avg = avg/8;
+    _delay_us(5);
+    sensor->distance = avg;
+    _delay_us(5);
+}
 
 #ifdef __cplusplus
 }
