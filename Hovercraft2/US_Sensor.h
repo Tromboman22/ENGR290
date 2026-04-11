@@ -43,6 +43,8 @@ uint32_t getterDistance(uint32_t pulseVal);
 
 bool set_fanspeed(US_Sensor *sensor);
 
+void searching(US_Sensor *sensor);
+
 #ifdef __cplusplus
 }
 #endif
