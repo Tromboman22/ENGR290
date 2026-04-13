@@ -25,8 +25,8 @@ void US_init(US_Sensor *sensor, uint8_t trig_pin, uint8_t echo_pin, uint8_t thru
 
     sensor->distance = 0;
     sensor->pulse_width = 0;
-    sensor->min_distance = 20.0;
-    sensor->max_distance = 40.0;
+    sensor->min_distance = 32.0;
+    sensor->max_distance = 60.0;
     sensor->min_pulse = 411;  // Closest object 14 * 58 cm (distance * 58) time of flight sound (411)
     sensor->max_pulse = 1233; // Furthest object 42 * 58 cm (1233)
     // PWM ranges for fan control
@@ -86,8 +86,7 @@ bool set_fanspeed(US_Sensor *sensor)
     if (sensor->distance >= sensor->max_distance) // edege condition high
         sensor->distance = sensor->max_distance;
 
-    sensor->thrust_pwm = sensor->max_fan_speed -
-                 (sensor->max_fan_speed - sensor->min_fan_speed) * // linearization over distance range
+    sensor->thrust_pwm = sensor->max_fan_speed * // linearization over distance range
                      (sensor->distance - sensor->min_distance) /
                      (sensor->max_distance - sensor->min_distance); // basically find the fraction of max that you're at
 
@@ -123,9 +122,9 @@ bool control_fans(US_Sensor *sensor)
     for(int i = 0; i < 3; i++)
     {
         if(i == small_index){
-            // nothing
+            ;// nothing
         } else if(i == large_index){
-            // nothing
+            ;// nothing
         } else {
             avg = values[i];
         }
