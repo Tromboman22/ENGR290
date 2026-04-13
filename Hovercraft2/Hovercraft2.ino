@@ -362,8 +362,8 @@ void servo_update_from_yaw(float target_yaw)
     float correction = error;
 
     // Optional: reduce saturation OR scale instead
-    if (correction >  70.0f) correction =  70.0f;
-    if (correction < -70.0f) correction = -70.0f;
+    if (correction >  60.0f) correction =  60.0f;
+    if (correction < -60.0f) correction = -60.0f;
 
     servo_write((int)(90.0f + correction));
 }
@@ -436,7 +436,6 @@ int main(void)
         int control = 0;
         
         int index = 0;
-        imu_update();
         counter++;
 
         if (counter == 10 && perpendicular == 0 && control_fans(&hvc.us_sensor)){ // leftmost condition 1st in C...
@@ -490,28 +489,31 @@ int main(void)
             imu_update();
             servo_update_from_yaw(target_yaw);
             _delay_ms(1000);
-            searching(&hvc.us_sensor);
             
             // now turning logic for 90 degrees  
         } else if(perpendicular > 0) {
             uart_puts("distance: ");
             uart_putfloat(hvc.us_sensor.distance, 1);
             uart_puts("\n");
-            set_lift(hvc.us_sensor.lift_pwm * 0.9);
-            set_thrust(hvc.us_sensor.thrust_pwm * 0.8);
+            imu_update();
+            servo_update_from_yaw(target_yaw);
+            _delay_ms(1);
+            set_lift(hvc.us_sensor.lift_pwm);
+            set_thrust(hvc.us_sensor.thrust_pwm);
             perpendicular--;
         } else {
             uart_puts("distance: ");
             uart_putfloat(hvc.us_sensor.distance, 1);
             uart_puts("\n");
             int difference = abs(target_yaw - yaw); // in case turning be smoother
+            imu_update();
+            servo_update_from_yaw(target_yaw);
+            _delay_ms(1);
             set_lift(hvc.us_sensor.lift_pwm);
             set_thrust(hvc.us_sensor.thrust_pwm);
         }
 
         // IMU heading calibration
-        imu_update();
-        servo_update_from_yaw(target_yaw);
         _delay_ms(1);
 
         // IR sensor to detect overhead
