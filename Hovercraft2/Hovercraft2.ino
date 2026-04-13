@@ -423,27 +423,33 @@ int main(void)
     set_lift(255);
     set_thrust(255);
 
+    int perpendicular = 0;
+    int counter = 0;
+
     while (1) {
         // US_Sensor distance reading
-        int angles[] = {5, 45, 90, 135, 175};
+        int angles[] = {5, 45, 135, 175};
         int control = 0;
         int index = 0;
         imu_update();
-        if (control_fans(&hvc.us_sensor)){
+        counter++;
+
+        if (counter == 10 && perpendicular == 0 && control_fans(&hvc.us_sensor)){ // leftmost condition 1st in C...
+            counter = 0;
             uart_puts("distance: ");
             uart_putfloat(hvc.us_sensor.distance, 1);
             uart_puts("\n");
-            set_lift(0);
-            set_thrust(0);
             uart_puts("initial angle: ");
             uart_putfloat(target_yaw, 1);
             uart_puts("\n");
+            set_lift(255); // LOOK HERE
+            set_thrust(255);
             // direction change
             _delay_ms(1000);
-            control = 0;
-            index = 0;
+            control = 255;
+            index = 255;
             // look around 5 directions
-            for (int i = 0; i < 5; i++){
+            for (int i = 0; i < 4; i++){
 
                 uart_puts("Angle: ");
                 uart_putfloat(angles[i], 1);
@@ -462,13 +468,12 @@ int main(void)
                 }
             }
             // get the new offset value, move in new direction
-            int perpendicular = 0;
             if(index == 0){
                 target_yaw = yaw + angles[index] - 95;
-                perpendicular = 1;
+                perpendicular = 10;
             } else if (index == 4) {
                 target_yaw = yaw + angles[index] - 85;
-                perpendicular = 1;
+                perpendicular = 10;
             } else {
                 target_yaw = yaw + angles[index] - 90;
             }
@@ -481,6 +486,13 @@ int main(void)
             _delay_ms(750);
             
             // now turning logic for 90 degrees  
+        } else if(perpendicular > 0) {
+            uart_puts("distance: ");
+            uart_putfloat(hvc.us_sensor.distance, 1);
+            uart_puts("\n");
+            set_lift(255 - hvc.us_sensor.lift_pwm + perpendicular*4.5);
+            set_thrust(255 - hvc.us_sensor.thrust_pwm + perpendicular*5);
+            perpendicular--;
         } else {
             uart_puts("distance: ");
             uart_putfloat(hvc.us_sensor.distance, 1);
@@ -495,17 +507,20 @@ int main(void)
         _delay_ms(1);
 
         // IR sensor to detect overhead
-        int tmp = 0;
-        for(int i = 0; i < 5; i++){
-            IR_sensor_update(&hvc.ir_sensor);
-            tmp += hvc.ir_sensor.distance;
-        }
-        tmp = tmp/5;
-        if (tmp < 6){
-            set_lift(hvc.us_sensor.lift_pwm);
-            set_thrust(hvc.us_sensor.thrust_pwm);
-            _delay_ms(3000);
-        }
+        // int tmp = 0;
+        // if (counter == 10){
+        //     counter = 0;
+        //     for(int i = 0; i < 5; i++){
+        //         IR_sensor_update(&hvc.ir_sensor);
+        //         tmp += hvc.ir_sensor.distance;
+        //     }
+        //     tmp = tmp/5;
+        //     if (tmp < 60){
+        //         set_lift(255 - hvc.us_sensor.lift_pwm);
+        //         set_thrust(255 - hvc.us_sensor.thrust_pwm);
+        //         _delay_ms(3000);
+        //     }
+        // }
     }
 
     return 0;
