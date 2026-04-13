@@ -353,11 +353,15 @@ void imu_update(void)
 // =============================================================================
 void servo_update_from_yaw(float target_yaw)
 {
-    float error = target_yaw + yaw;
-    while (error >  180.0f) error -= 360.0f;
-    while (error < -180.0f) error += 360.0f;
+    // checkpoint
+    float error = target_yaw + yaw; 
+
+    // while (error >  180.0f) error -= 360.0f;
+    // while (error < -180.0f) error += 360.0f;
 
     float correction = error;
+
+    // Optional: reduce saturation OR scale instead
     if (correction >  85.0f) correction =  85.0f;
     if (correction < -85.0f) correction = -85.0f;
 
@@ -428,35 +432,36 @@ int main(void)
 
     while (1) {
         // US_Sensor distance reading
-        int angles[] = {5, 45, 135, 175};
+        int angles[] = {5, 175};
         int control = 0;
+        
         int index = 0;
         imu_update();
         counter++;
 
-        if (counter == 10 && perpendicular == 0 && control_fans(&hvc.us_sensor)){ // leftmost condition 1st in C...
-            counter = 0;
+        if (counter == 10 && (counter = 0, perpendicular == 0) && control_fans(&hvc.us_sensor)){ // leftmost condition 1st in C...
+            
             uart_puts("distance: ");
             uart_putfloat(hvc.us_sensor.distance, 1);
             uart_puts("\n");
             uart_puts("initial angle: ");
             uart_putfloat(target_yaw, 1);
             uart_puts("\n");
-            set_lift(255); // LOOK HERE
-            set_thrust(255);
+            set_lift(0); // LOOK HERE
+            set_thrust(0);
             // direction change
             _delay_ms(1000);
-            control = 255;
-            index = 255;
+            control = 0;
+            index = 0;
             // look around 5 directions
-            for (int i = 0; i < 4; i++){
+            for (int i = 0; i < 2; i++){
 
                 uart_puts("Angle: ");
                 uart_putfloat(angles[i], 1);
                 uart_puts("\n");
 
                 servo_write(angles[i]);
-                _delay_ms(750);
+                _delay_ms(1000);
                 searching(&hvc.us_sensor);
                 // print
                 uart_putfloat(hvc.us_sensor.distance, 1);
@@ -469,41 +474,43 @@ int main(void)
             }
             // get the new offset value, move in new direction
             if(index == 0){
-                target_yaw = yaw + angles[index] - 95;
-                perpendicular = 10;
-            } else if (index == 4) {
-                target_yaw = yaw + angles[index] - 85;
-                perpendicular = 10;
-            } else {
-                target_yaw = yaw + angles[index] - 90;
+                target_yaw = target_yaw -90;
+                perpendicular = 20;
+            } else if (index == 1) {
+                target_yaw = target_yaw +90;
+                perpendicular = 20;
             }
+            // checkpoint
             
             uart_puts("new angle: ");
             uart_putfloat(target_yaw, 1);
             uart_puts("\n");
             imu_update();
             servo_update_from_yaw(target_yaw);
-            _delay_ms(750);
+            _delay_ms(1000);
             
             // now turning logic for 90 degrees  
         } else if(perpendicular > 0) {
             uart_puts("distance: ");
             uart_putfloat(hvc.us_sensor.distance, 1);
             uart_puts("\n");
-            set_lift(255 - hvc.us_sensor.lift_pwm + perpendicular*4.5);
-            set_thrust(255 - hvc.us_sensor.thrust_pwm + perpendicular*5);
+            set_lift(hvc.us_sensor.lift_pwm * 0.8);
+            set_thrust(hvc.us_sensor.thrust_pwm - 0.8);
             perpendicular--;
         } else {
             uart_puts("distance: ");
             uart_putfloat(hvc.us_sensor.distance, 1);
             uart_puts("\n");
-            set_lift(255 - hvc.us_sensor.lift_pwm);
-            set_thrust(255 - hvc.us_sensor.thrust_pwm);
+            set_lift(hvc.us_sensor.lift_pwm);
+            set_thrust(hvc.us_sensor.thrust_pwm);
         }
 
         // IMU heading calibration
         imu_update();
         servo_update_from_yaw(target_yaw);
+        if(counter == 10){
+            counter = 0;
+        }
         _delay_ms(1);
 
         // IR sensor to detect overhead
