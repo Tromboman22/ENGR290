@@ -362,8 +362,8 @@ void servo_update_from_yaw(float target_yaw)
     float correction = error;
 
     // Optional: reduce saturation OR scale instead
-    if (correction >  85.0f) correction =  85.0f;
-    if (correction < -85.0f) correction = -85.0f;
+    if (correction >  70.0f) correction =  70.0f;
+    if (correction < -70.0f) correction = -70.0f;
 
     servo_write((int)(90.0f + correction));
 }
@@ -432,14 +432,14 @@ int main(void)
 
     while (1) {
         // US_Sensor distance reading
-        int angles[] = {5, 175};
+        int angles[] = {5, 90, 175};
         int control = 0;
         
         int index = 0;
         imu_update();
         counter++;
 
-        if (counter == 10 && (counter = 0, perpendicular == 0) && control_fans(&hvc.us_sensor)){ // leftmost condition 1st in C...
+        if (counter == 10 && perpendicular == 0 && control_fans(&hvc.us_sensor)){ // leftmost condition 1st in C...
             
             uart_puts("distance: ");
             uart_putfloat(hvc.us_sensor.distance, 1);
@@ -454,14 +454,14 @@ int main(void)
             control = 0;
             index = 0;
             // look around 5 directions
-            for (int i = 0; i < 2; i++){
+            for (int i = 0; i < 3; i++){
 
                 uart_puts("Angle: ");
                 uart_putfloat(angles[i], 1);
                 uart_puts("\n");
 
                 servo_write(angles[i]);
-                _delay_ms(1000);
+                _delay_ms(750);
                 searching(&hvc.us_sensor);
                 // print
                 uart_putfloat(hvc.us_sensor.distance, 1);
@@ -474,11 +474,13 @@ int main(void)
             }
             // get the new offset value, move in new direction
             if(index == 0){
-                target_yaw = target_yaw -90;
+                target_yaw = target_yaw - 90;
                 perpendicular = 20;
-            } else if (index == 1) {
-                target_yaw = target_yaw +90;
+            } else if (index == 2) {
+                target_yaw = target_yaw + 90;
                 perpendicular = 20;
+            } else {
+                perpendicular = 10;
             }
             // checkpoint
             
@@ -488,19 +490,21 @@ int main(void)
             imu_update();
             servo_update_from_yaw(target_yaw);
             _delay_ms(1000);
+            searching(&hvc.us_sensor);
             
             // now turning logic for 90 degrees  
         } else if(perpendicular > 0) {
             uart_puts("distance: ");
             uart_putfloat(hvc.us_sensor.distance, 1);
             uart_puts("\n");
-            set_lift(hvc.us_sensor.lift_pwm * 0.8);
-            set_thrust(hvc.us_sensor.thrust_pwm - 0.8);
+            set_lift(hvc.us_sensor.lift_pwm * 0.9);
+            set_thrust(hvc.us_sensor.thrust_pwm * 0.8);
             perpendicular--;
         } else {
             uart_puts("distance: ");
             uart_putfloat(hvc.us_sensor.distance, 1);
             uart_puts("\n");
+            int difference = abs(target_yaw - yaw); // in case turning be smoother
             set_lift(hvc.us_sensor.lift_pwm);
             set_thrust(hvc.us_sensor.thrust_pwm);
         }
@@ -508,26 +512,24 @@ int main(void)
         // IMU heading calibration
         imu_update();
         servo_update_from_yaw(target_yaw);
-        if(counter == 10){
-            counter = 0;
-        }
         _delay_ms(1);
 
         // IR sensor to detect overhead
-        // int tmp = 0;
-        // if (counter == 10){
-        //     counter = 0;
-        //     for(int i = 0; i < 5; i++){
-        //         IR_sensor_update(&hvc.ir_sensor);
-        //         tmp += hvc.ir_sensor.distance;
-        //     }
-        //     tmp = tmp/5;
-        //     if (tmp < 60){
-        //         set_lift(255 - hvc.us_sensor.lift_pwm);
-        //         set_thrust(255 - hvc.us_sensor.thrust_pwm);
-        //         _delay_ms(3000);
-        //     }
-        // }
+        int tmp = 0;
+        if (counter == 10){
+            counter = 0;
+            for(int i = 0; i < 5; i++){
+                IR_sensor_update(&hvc.ir_sensor);
+                tmp += hvc.ir_sensor.distance;
+            }
+            tmp = tmp/5;
+            if (tmp < 40){
+                set_lift(0);
+                set_thrust(0);
+                servo_update_from_yaw(-yaw);
+                _delay_ms(3000);
+            }
+        }
     }
 
     return 0;
